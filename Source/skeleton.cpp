@@ -1,4 +1,5 @@
 #include <iostream>
+#include <algorithm>
 #include <glm/glm.hpp>
 #include <SDL.h>
 #include "SDLauxiliary.h"
@@ -9,50 +10,61 @@ using glm::vec3;
 using glm::mat3;
 
 /* ----------------------------------------------------------------------------*/
-/* GLOBAL VARIABLES                                                            */
+/* GLOBAL VARIABLES AND STRUCTS                                                        */
 
 const int SCREEN_WIDTH = 500;
 const int SCREEN_HEIGHT = 500;
 SDL_Surface* screen;
 int t;
-vector<vec3> stars( 1000 );
+
+struct Intersection
+{
+	glm::vec3 position;
+	float distance;
+	int triangleIndex;
+};
 
 /* ----------------------------------------------------------------------------*/
 /* FUNCTIONS                                                                   */
 
-void Update( vector<vec3>& stars );
-void Draw( vector<vec3>& stars);
+void Update();
+void Draw( vector<Triangle>& triangles );
 void Interpolate( vec3 a, vec3 b, vector<vec3>& result );
+bool ClosestIntersection( vec3 start, vec3 dir, const vector<Triangle>& triangles, Intersection& closestIntersection );
+// bool distanceCompare( const Intersection &x, const Intersection &y );
 
 int main( int argc, char* argv[] )
 {
-
-	for ( int i=0; i<stars.size(); ++i )
-	{
-		float randx = -1 + 2*(float(rand()) / float(RAND_MAX));	// random number between -1 and 1
-		float randy = -1 + 2*(float(rand()) / float(RAND_MAX));	// random number between -1 and 1
-		float randz =  float(rand()) / float(RAND_MAX); // random number between 0 and 1
-
-		cout << stars[1].z << endl;
-		stars[i].x = randx;
-		stars[i].y = randy;
-		stars[i].z = randz;
-	}
+	vector<Triangle> triangles;
+	// vector<vec3> stars( 1000 );
+	// for ( int i=0; i<stars.size(); ++i )
+	// {
+	// 	float randx = -1 + 2*(float(rand()) / float(RAND_MAX));	// random number between -1 and 1
+	// 	float randy = -1 + 2*(float(rand()) / float(RAND_MAX));	// random number between -1 and 1
+	// 	float randz =  float(rand()) / float(RAND_MAX); // random number between 0 and 1
+	//
+	// 	cout << stars[1].z << endl;
+	// 	stars[i].x = randx;
+	// 	stars[i].y = randy;
+	// 	stars[i].z = randz;
+	// }
 
 	screen = InitializeSDL( SCREEN_WIDTH, SCREEN_HEIGHT );
 	t = SDL_GetTicks();	// Set start value for timer.
 
+	LoadTestModel( triangles );
+
 	while( NoQuitMessageSDL() )
 	{
-		Update( stars );
-		Draw( stars );
+		Update();
+		Draw( triangles );
 	}
 
 	SDL_SaveBMP( screen, "screenshot.bmp" );
 	return 0;
 }
 
-void Update( vector<vec3>& stars )
+void Update()
 {
 	// Compute frame time:
 	int t2 = SDL_GetTicks();
@@ -60,18 +72,131 @@ void Update( vector<vec3>& stars )
 	t = t2;
 	cout << "Render time: " << dt << " ms." << endl;
 
-	for( int s=0; s<stars.size(); ++s )
-	{
-		float v = 0.0001;
-		stars[s].z -= v*dt;
-		if( stars[s].z <= 0 )
-			stars[s].z += 1;
-		if( stars[s].z > 1 )
-			stars[s].z -= 1;
-	}
+	// for( int s=0; s<stars.size(); ++s )
+	// {
+	// 	float v = 0.0001;
+	// 	stars[s].z -= v*dt;
+	// 	if( stars[s].z <= 0 )
+	// 		stars[s].z += 1;
+	// 	if( stars[s].z > 1 )
+	// 		stars[s].z -= 1;
+	// }
 }
 
-void Draw( vector<vec3>& stars )
+void Draw( vector<Triangle>& triangles )
+{
+	SDL_FillRect( screen, 0, 0 );
+
+	if( SDL_MUSTLOCK(screen) )
+		SDL_LockSurface(screen);
+
+	Intersection closestIntersection;
+	float focalLength,centerx,centery;
+	vec3 d;
+	// bool hasIntercept;
+	focalLength = SCREEN_HEIGHT*1.5;
+	centerx = SCREEN_WIDTH/2;
+	centery = SCREEN_HEIGHT/2;
+	vec3 cameraPos = vec3( 0.0, 0.0, -4);
+
+	for( int y=0; y<SCREEN_HEIGHT; ++y )
+	{
+		for( int x=0; x<SCREEN_WIDTH; ++x )
+		{
+			d = vec3( x-centerx, y-centery, focalLength );
+			// hasIntercept = ClosestIntersection( cameraPos, d, triangles, closestIntersection);
+			if( ClosestIntersection( cameraPos, d, triangles, closestIntersection ) ){
+				int index = closestIntersection.triangleIndex;
+				vec3 tcol = triangles[index].color;
+				PutPixelSDL( screen, x, y, triangles[index].color );
+			}
+			else
+				PutPixelSDL( screen, x, y, vec3(0, 0, 0) );
+		}
+	}
+
+	if( SDL_MUSTLOCK(screen) )
+		SDL_UnlockSurface(screen);
+
+	SDL_UpdateRect( screen, 0, 0, 0, 0 );
+}
+
+// bool distanceCompare( const Intersection &x, const Intersection &y )
+// {
+// 	return ( 0 < x.distance < y.distance);
+// }
+
+bool ClosestIntersection( vec3 start, vec3 dir, const vector<Triangle>& triangles, Intersection& closestIntersection )
+{
+	vector<Intersection> intersections( 30 );
+	int i = 0;
+	for( int s=0; s<triangles.size(); ++s)
+	{
+		// vec3 v0 = triangles[s].v0;
+		// vec3 v1 = triangles[s].v1;
+		// vec3 v2 = triangles[s].v2;
+		vec3 e1 = triangles[s].v1 - triangles[s].v0;
+		vec3 e2 = triangles[s].v2 - triangles[s].v0;
+		vec3 b = start - triangles[s].v0;
+		mat3 A( -dir, e1, e2 );
+		vec3 x = glm::inverse( A ) * b;
+		// cout << s << ", ";
+		if ( (x.x >= 0) && (x.y > 0) && (x.z > 0) && ((x.y + x.z) < 1) )	// x.x = t, x.y = u, x.z = v
+		{
+			intersections[i].position = start + x.x * dir;
+			intersections[i].distance = x.x;
+			intersections[i].triangleIndex = s;
+			++i;
+		}
+	}
+
+	// TODO: build a better way of computing the nearest intersection
+
+	// sort( intersections.begin(), intersections.end(), distanceCompare );
+	// closestIntersection = intersections[0];
+
+	Intersection temp = intersections[0];
+	for ( int j=0; j < i; ++j)
+	{
+		if ( intersections[j].distance < temp.distance )
+			temp = intersections[j];
+	}
+	closestIntersection = temp;
+
+	if ( closestIntersection.distance >= 0 )
+		return true;
+
+	return false;
+}
+
+void DrawStars( vector<vec3>& stars )
+{
+	SDL_FillRect( screen, 0, 0 );
+
+	if( SDL_MUSTLOCK(screen) )
+		SDL_LockSurface(screen);
+
+	float focal,centerx,centery;
+	focal = SCREEN_HEIGHT/2;
+	centerx = SCREEN_WIDTH/2;
+	centery = SCREEN_HEIGHT/2;
+	// vec3 color ( 1.0, 1.0, 1.0 );
+
+	for( size_t s=0; s<stars.size(); ++s )
+	{
+		vec3 color = 0.2f * vec3(1.0,1.0,1.0) / (stars[s].z*stars[s].z);
+		float u = focal*(stars[s].x/stars[s].z) + centerx;
+		float v = focal*(stars[s].y/stars[s].z) + centery;
+		PutPixelSDL( screen, u, v, color );
+	}
+
+	if( SDL_MUSTLOCK(screen) )
+		SDL_UnlockSurface(screen);
+
+	SDL_UpdateRect( screen, 0, 0, 0, 0 );
+}
+
+void DrawColors()
 {
 	SDL_FillRect( screen, 0, 0 );
 
@@ -97,25 +222,6 @@ void Draw( vector<vec3>& stars )
 			PutPixelSDL( screen, x, y, rowColors[x] );
 		}
 	}
-
-	// float focal,centerx,centery;
-	// focal = SCREEN_HEIGHT/2;
-	// centerx = SCREEN_WIDTH/2;
-	// centery = SCREEN_HEIGHT/2;
-	// vec3 color ( 1.0, 1.0, 1.0 );
-	//
-	// for( size_t s=0; s<stars.size(); ++s )
-	// {
-	// 	vec3 color = 0.2f * vec3(1.0,1.0,1.0) / (stars[s].z*stars[s].z);
-	// 	float u = focal*(stars[s].x/stars[s].z) + centerx;
-	// 	float v = focal*(stars[s].y/stars[s].z) + centery;
-		// PutPixelSDL( screen, u, v, color );
-	// }
-
-	if( SDL_MUSTLOCK(screen) )
-		SDL_UnlockSurface(screen);
-
-	SDL_UpdateRect( screen, 0, 0, 0, 0 );
 }
 
 void Interpolate( vec3 a, vec3 b, vector<vec3>& result)
