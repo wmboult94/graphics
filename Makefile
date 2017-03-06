@@ -1,4 +1,4 @@
-FILE=skeleton
+FILE=rasteriser
 
 ########
 #   Directories
@@ -10,9 +10,9 @@ B_DIR=Build
 EXEC=$(B_DIR)/$(FILE)
 
 # default build settings
-CC_OPTS=-c -pipe -Wall -Wno-switch -ggdb -g3
-LN_OPTS=
-CC=g++
+CC_OPTS=-c -pipe -Wall -Wno-switch -ggdb -g3 -O3
+LN_OPTS=-lX11
+CC=c++
 
 ########
 #       SDL options
@@ -20,6 +20,9 @@ SDL_CFLAGS := $(shell sdl-config --cflags)
 GLM_CFLAGS := -I$(GLMDIR)
 SDL_LDFLAGS := $(shell sdl-config --libs)
 
+CPP = /usr/local/opt/llvm/bin/clang++
+CPPFLAGS = -I/usr/local/opt/llvm/include -fopenmp
+LDFLAGS = -L/usr/local/opt/llvm/lib
 ########
 #   This is the default action
 all:Build
@@ -34,13 +37,13 @@ OBJ = $(B_DIR)/$(FILE).o
 ########
 #   Objects
 $(B_DIR)/$(FILE).o : $(S_DIR)/$(FILE).cpp $(S_DIR)/SDLauxiliary.h $(S_DIR)/TestModel.h
-	$(CC) $(CC_OPTS) -o $(B_DIR)/$(FILE).o $(S_DIR)/$(FILE).cpp $(SDL_CFLAGS) $(GLM_CFLAGS)
+	$(CPP) $(CC_OPTS) -o $(B_DIR)/$(FILE).o $(S_DIR)/$(FILE).cpp $(SDL_CFLAGS) $(GLM_CFLAGS)
 
 
 ########
 #   Main build rule
 Build : $(OBJ) Makefile
-	$(CC) $(LN_OPTS) -o $(EXEC) $(OBJ) $(SDL_LDFLAGS)
+	$(CC)  $(LN_OPTS) -o $(EXEC) $(OBJ) $(SDL_LDFLAGS)
 
 
 clean:
